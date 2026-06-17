@@ -104,7 +104,7 @@ def save_page_result(
     driver: webdriver.Firefox,
     output_dir: Path,
     name: str,
-) -> None:
+) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     screenshot_path = output_dir / f"{name}.png"
     html_path = output_dir / f"{name}.html"
@@ -118,6 +118,19 @@ def save_page_result(
     print(f"HTML: {html_path}")
     print("\nVisible page text:")
     print(summarize_page(driver))
+    return screenshot_path
+
+
+def open_png_in_new_window(
+    driver: webdriver.Firefox,
+    output_dir: Path,
+    png_path: Path,
+) -> None:
+    driver.switch_to.new_window("window")
+    driver.get(png_path.resolve().as_uri())
+    driver.save_screenshot(str(output_dir / "shown-png-window.png"))
+    print(f"\nOpened PNG in new browser window: {png_path}")
+    print(f"Window verification screenshot: {output_dir / 'shown-png-window.png'}")
 
 
 def log_in(
@@ -235,7 +248,8 @@ def select_general_admission_tickets(
     submit_button.click()
     wait.until(lambda active_driver: active_driver.current_url != starting_url)
     wait_for_rendered_body(wait)
-    save_page_result(driver, output_dir, "ticket-submit-result")
+    screenshot_path = save_page_result(driver, output_dir, "ticket-submit-result")
+    open_png_in_new_window(driver, output_dir, screenshot_path)
 
 
 def parse_args() -> argparse.Namespace:
