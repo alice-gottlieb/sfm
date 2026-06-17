@@ -1,4 +1,5 @@
 import argparse
+from datetime import date, datetime
 import json
 import re
 import sys
@@ -13,6 +14,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 
 LOGIN_URL = "https://account.sfmoma.org/login/ticketing"
+PERFORMANCE_URL = "https://tickets.sfmoma.org/tickets/performance?date={ticket_date}"
 DEFAULT_KEYS_PATH = Path("KEYS.txt")
 DEFAULT_OUTPUT_DIR = Path("moma-site-info")
 MACOS_FIREFOX_BINARY = Path(
@@ -76,13 +78,44 @@ def summarize_page(driver: webdriver.Firefox) -> str:
     return compact_body
 
 
+def wait_for_rendered_body(wait: WebDriverWait) -> None:
+    try:
+        wait.until(
+            lambda active_driver: active_driver.execute_script(
+                "return document.readyState === 'complete' && !!document.body;"
+            )
+        )
+    except TimeoutException:
+        print("Warning: destination page did not render a body before the timeout.")
+
+
+def save_page_result(
+    driver: webdriver.Firefox,
+    output_dir: Path,
+    name: str,
+) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    screenshot_path = output_dir / f"{name}.png"
+    html_path = output_dir / f"{name}.html"
+    driver.save_screenshot(str(screenshot_path))
+    html_path.write_text(driver.page_source)
+
+    print(f"\nSaved {name}.")
+    print(f"Current URL: {driver.current_url}")
+    print(f"Page title: {driver.title}")
+    print(f"Screenshot: {screenshot_path}")
+    print(f"HTML: {html_path}")
+    print("\nVisible page text:")
+    print(summarize_page(driver))
+
+
 def log_in(
     driver: webdriver.Firefox,
     email: str,
     password: str,
     output_dir: Path,
     timeout_seconds: int,
-) -> None:
+) -> WebDriverWait:
     wait = WebDriverWait(driver, timeout_seconds)
 
     print(f"Opening {LOGIN_URL}")
@@ -98,38 +131,45 @@ def log_in(
 
     driver.find_element(By.ID, "loginSubmit").click()
 
-    try:
-        wait.until(lambda active_driver: active_driver.current_url != LOGIN_URL)
-    except TimeoutException:
-        pass
+    wait.until(lambda active_driver: "tickets.sfmoma.org" in active_driver.current_url)
 
-    try:
-        wait.until(
-            lambda active_driver: active_driver.execute_script(
-                "return document.readyState === 'complete' && !!document.body;"
-            )
-        )
-    except TimeoutException:
-        print("Warning: destination page did not render a body before the timeout.")
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    screenshot_path = output_dir / "login-result.png"
-    html_path = output_dir / "login-result.html"
-    driver.save_screenshot(str(screenshot_path))
-    html_path.write_text(driver.page_source)
-
+    wait_for_rendered_body(wait)
     print("\nLogin submitted.")
-    print(f"Current URL: {driver.current_url}")
-    print(f"Page title: {driver.title}")
-    print(f"Screenshot: {screenshot_path}")
-    print(f"HTML: {html_path}")
-    print("\nVisible page text:")
-    print(summarize_page(driver))
+    save_page_result(driver, output_dir, "login-result")
+    return wait
+
+
+def parse_ticket_date(raw_date: str | None) -> str:
+    if raw_date is None:
+        return date.today().isoformat()
+    try:
+        return datetime.strptime(raw_date, "%Y-%m-%d").date().isoformat()
+    except ValueError:
+        raise RuntimeError("Date must use YYYY-MM-DD format, for example 2026-06-17.")
+
+
+def open_performance_page(
+    driver: webdriver.Firefox,
+    wait: WebDriverWait,
+    output_dir: Path,
+    ticket_date: str,
+) -> None:
+    performance_url = PERFORMANCE_URL.format(ticket_date=ticket_date)
+    print(f"\nOpening performance page: {performance_url}")
+    driver.get(performance_url)
+    wait.until(lambda active_driver: f"date={ticket_date}" in active_driver.current_url)
+    wait_for_rendered_body(wait)
+    save_page_result(driver, output_dir, "performance-result")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Log in to the SFMOMA ticketing account page with Selenium."
+    )
+    parser.add_argument(
+        "date",
+        nargs="?",
+        help="Ticket date in YYYY-MM-DD format. Defaults to today.",
     )
     parser.add_argument(
         "--keys",
@@ -167,8 +207,10 @@ def main() -> int:
     driver = None
     try:
         email, password = load_credentials(args.keys)
+        ticket_date = parse_ticket_date(args.date)
         driver = build_driver(args.headless)
-        log_in(driver, email, password, args.output_dir, args.timeout)
+        wait = log_in(driver, email, password, args.output_dir, args.timeout)
+        open_performance_page(driver, wait, args.output_dir, ticket_date)
         if args.keep_open and not args.headless:
             input("\nPress Enter to close Firefox...")
         return 0
