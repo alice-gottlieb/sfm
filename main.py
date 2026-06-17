@@ -253,6 +253,42 @@ def select_general_admission_tickets(
     wait_for_rendered_body(wait)
     screenshot_path = save_page_result(driver, output_dir, "ticket-submit-result")
     open_png_with_system_viewer(screenshot_path)
+    if confirm_purchase_prompt():
+        submit_purchase(driver, wait, output_dir)
+    else:
+        print("\nPurchase not submitted.")
+
+
+def confirm_purchase_prompt() -> bool:
+    try:
+        answer = input("\nSubmit this order? [y/N]: ").strip().lower()
+    except EOFError:
+        return False
+    return answer == "y"
+
+
+def submit_purchase(
+    driver: webdriver.Firefox,
+    wait: WebDriverWait,
+    output_dir: Path,
+) -> None:
+    accept_terms = wait.until(EC.presence_of_element_located((By.ID, "AcceptTerms")))
+    dismiss_cookie_banner(driver)
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", accept_terms)
+    if not accept_terms.is_selected():
+        driver.execute_script("arguments[0].click();", accept_terms)
+
+    purchase_button = wait.until(EC.element_to_be_clickable((By.ID, "purchaseSubmit")))
+    starting_url = driver.current_url
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", purchase_button)
+    purchase_button.click()
+    wait.until(
+        lambda active_driver: active_driver.current_url != starting_url
+        or "confirmation" in active_driver.page_source.lower()
+    )
+    wait_for_rendered_body(wait)
+    confirmation_screenshot = save_page_result(driver, output_dir, "confirmation-result")
+    open_png_with_system_viewer(confirmation_screenshot)
 
 
 def parse_args() -> argparse.Namespace:
