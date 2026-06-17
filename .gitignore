@@ -4,3 +4,4 @@ moma-site-info/**
 .python-version
 .vscode/**
 __pycache__/
+sfm.egg-info/

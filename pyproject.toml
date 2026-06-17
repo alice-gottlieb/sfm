@@ -7,3 +7,9 @@ requires-python = ">=3.11"
 dependencies = [
     "selenium>=4.33.0",
 ]
+
+[project.scripts]
+sfm = "main:main"
+
+[tool.uv]
+package = true
