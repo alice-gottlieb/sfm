@@ -9,6 +9,7 @@ from selenium import webdriver
 from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.support.select import Select
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -89,6 +90,14 @@ def wait_for_rendered_body(wait: WebDriverWait) -> None:
         )
     except TimeoutException:
         print("Warning: destination page did not render a body before the timeout.")
+
+
+def dismiss_cookie_banner(driver: webdriver.Firefox) -> None:
+    for button_id in ("onetrust-reject-all-handler", "onetrust-close-btn-container"):
+        buttons = driver.find_elements(By.ID, button_id)
+        if buttons and buttons[0].is_displayed():
+            driver.execute_script("arguments[0].click();", buttons[0])
+            return
 
 
 def save_page_result(
@@ -191,12 +200,42 @@ def select_admission(
 
     print(f"\nClicking admission option: {admission_name}")
     starting_url = driver.current_url
+    dismiss_cookie_banner(driver)
     admission_link.click()
     wait.until(lambda active_driver: active_driver.current_url != starting_url)
     wait_for_rendered_body(wait)
 
     result_name = "admission-special-result" if is_special else "admission-general-result"
     save_page_result(driver, output_dir, result_name)
+
+
+def select_general_admission_tickets(
+    driver: webdriver.Firefox,
+    wait: WebDriverWait,
+    output_dir: Path,
+    ticket_count: int,
+) -> None:
+    member_select = wait.until(
+        EC.element_to_be_clickable(
+            (
+                By.XPATH,
+                "//tr[contains(translate(@data-product, "
+                "'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), "
+                "'\"category\":\"member\"')]//select",
+            )
+        )
+    )
+    print(f"\nSelecting {ticket_count} member ticket(s).")
+    Select(member_select).select_by_value(str(ticket_count))
+
+    submit_button = wait.until(EC.element_to_be_clickable((By.ID, "submit-button")))
+    starting_url = driver.current_url
+    dismiss_cookie_banner(driver)
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_button)
+    submit_button.click()
+    wait.until(lambda active_driver: active_driver.current_url != starting_url)
+    wait_for_rendered_body(wait)
+    save_page_result(driver, output_dir, "ticket-submit-result")
 
 
 def parse_args() -> argparse.Namespace:
@@ -219,6 +258,14 @@ def parse_args() -> argparse.Namespace:
             "Click a special exhibition admission option. If no name is given, "
             f"defaults to '{DEFAULT_SPECIAL_ADMISSION}'."
         ),
+    )
+    parser.add_argument(
+        "-n",
+        "--num-tickets",
+        type=int,
+        choices=(1, 2),
+        default=1,
+        help="Number of member General Admission tickets to reserve. Must be 1 or 2.",
     )
     parser.add_argument(
         "--keys",
@@ -268,6 +315,13 @@ def main() -> int:
             admission_name,
             is_special=args.special is not None,
         )
+        if args.special is None:
+            select_general_admission_tickets(
+                driver,
+                wait,
+                args.output_dir,
+                args.num_tickets,
+            )
         if args.keep_open and not args.headless:
             input("\nPress Enter to close Firefox...")
         return 0
