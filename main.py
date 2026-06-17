@@ -15,6 +15,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 LOGIN_URL = "https://account.sfmoma.org/login/ticketing"
 PERFORMANCE_URL = "https://tickets.sfmoma.org/tickets/performance?date={ticket_date}"
+DEFAULT_ADMISSION = "General Admission"
+DEFAULT_SPECIAL_ADMISSION = "Matisse: A Modern Scandal + General Admission"
 DEFAULT_KEYS_PATH = Path("KEYS.txt")
 DEFAULT_OUTPUT_DIR = Path("moma-site-info")
 MACOS_FIREFOX_BINARY = Path(
@@ -162,6 +164,41 @@ def open_performance_page(
     save_page_result(driver, output_dir, "performance-result")
 
 
+def xpath_string_literal(text: str) -> str:
+    if '"' not in text:
+        return f'"{text}"'
+    if "'" not in text:
+        return f"'{text}'"
+    parts = text.split('"')
+    return 'concat(' + ', \'"\', '.join(f'"{part}"' for part in parts) + ')'
+
+
+def select_admission(
+    driver: webdriver.Firefox,
+    wait: WebDriverWait,
+    output_dir: Path,
+    admission_name: str,
+    is_special: bool,
+) -> None:
+    admission_xpath = (
+        "//a[contains(concat(' ', normalize-space(@class), ' '), ' event-type-link ') "
+        f"and normalize-space(.) = {xpath_string_literal(admission_name)}]"
+    )
+    admission_link = wait.until(EC.element_to_be_clickable((By.XPATH, admission_xpath)))
+    link_class = admission_link.get_attribute("class") or ""
+    if "disabled" in link_class.split():
+        raise RuntimeError(f"Admission option is disabled or sold out: {admission_name}")
+
+    print(f"\nClicking admission option: {admission_name}")
+    starting_url = driver.current_url
+    admission_link.click()
+    wait.until(lambda active_driver: active_driver.current_url != starting_url)
+    wait_for_rendered_body(wait)
+
+    result_name = "admission-special-result" if is_special else "admission-general-result"
+    save_page_result(driver, output_dir, result_name)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Log in to the SFMOMA ticketing account page with Selenium."
@@ -170,6 +207,18 @@ def parse_args() -> argparse.Namespace:
         "date",
         nargs="?",
         help="Ticket date in YYYY-MM-DD format. Defaults to today.",
+    )
+    parser.add_argument(
+        "-s",
+        "--special",
+        nargs="?",
+        const=DEFAULT_SPECIAL_ADMISSION,
+        default=None,
+        metavar="EXHIBITION",
+        help=(
+            "Click a special exhibition admission option. If no name is given, "
+            f"defaults to '{DEFAULT_SPECIAL_ADMISSION}'."
+        ),
     )
     parser.add_argument(
         "--keys",
@@ -208,9 +257,17 @@ def main() -> int:
     try:
         email, password = load_credentials(args.keys)
         ticket_date = parse_ticket_date(args.date)
+        admission_name = args.special if args.special is not None else DEFAULT_ADMISSION
         driver = build_driver(args.headless)
         wait = log_in(driver, email, password, args.output_dir, args.timeout)
         open_performance_page(driver, wait, args.output_dir, ticket_date)
+        select_admission(
+            driver,
+            wait,
+            args.output_dir,
+            admission_name,
+            is_special=args.special is not None,
+        )
         if args.keep_open and not args.headless:
             input("\nPress Enter to close Firefox...")
         return 0
