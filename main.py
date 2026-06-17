@@ -278,17 +278,30 @@ def submit_purchase(
     if not accept_terms.is_selected():
         driver.execute_script("arguments[0].click();", accept_terms)
 
+    click_purchase_proceed(driver, wait)
+    payment_review_screenshot = save_page_result(driver, output_dir, "payment-review-result")
+    open_png_with_system_viewer(payment_review_screenshot)
+
+    click_purchase_proceed(driver, wait)
+    wait.until(
+        lambda active_driver: "purchaseSubmit" not in active_driver.page_source
+        or "confirmation" in active_driver.current_url.lower()
+        or "confirmation" in active_driver.page_source.lower()
+    )
+    confirmation_screenshot = save_page_result(driver, output_dir, "confirmation-result")
+    open_png_with_system_viewer(confirmation_screenshot)
+
+
+def click_purchase_proceed(
+    driver: webdriver.Firefox,
+    wait: WebDriverWait,
+) -> None:
     purchase_button = wait.until(EC.element_to_be_clickable((By.ID, "purchaseSubmit")))
     starting_url = driver.current_url
     driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", purchase_button)
     purchase_button.click()
-    wait.until(
-        lambda active_driver: active_driver.current_url != starting_url
-        or "confirmation" in active_driver.page_source.lower()
-    )
+    wait.until(lambda active_driver: active_driver.current_url != starting_url)
     wait_for_rendered_body(wait)
-    confirmation_screenshot = save_page_result(driver, output_dir, "confirmation-result")
-    open_png_with_system_viewer(confirmation_screenshot)
 
 
 def parse_args() -> argparse.Namespace:
