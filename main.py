@@ -230,6 +230,7 @@ def select_general_admission_tickets(
     wait: WebDriverWait,
     output_dir: Path,
     ticket_count: int,
+    auto: bool,
 ) -> None:
     member_select = wait.until(
         EC.element_to_be_clickable(
@@ -252,11 +253,15 @@ def select_general_admission_tickets(
     wait.until(lambda active_driver: active_driver.current_url != starting_url)
     wait_for_rendered_body(wait)
     screenshot_path = save_page_result(driver, output_dir, "ticket-submit-result")
-    open_png_with_system_viewer(screenshot_path)
-    if confirm_purchase_prompt():
-        submit_purchase(driver, wait, output_dir)
+    if auto:
+        print("\nAuto mode enabled; submitting order without prompt.")
+        submit_purchase(driver, wait, output_dir, show_intermediate=False)
     else:
-        print("\nPurchase not submitted.")
+        open_png_with_system_viewer(screenshot_path)
+        if confirm_purchase_prompt():
+            submit_purchase(driver, wait, output_dir, show_intermediate=True)
+        else:
+            print("\nPurchase not submitted.")
 
 
 def confirm_purchase_prompt() -> bool:
@@ -271,6 +276,7 @@ def submit_purchase(
     driver: webdriver.Firefox,
     wait: WebDriverWait,
     output_dir: Path,
+    show_intermediate: bool,
 ) -> None:
     accept_terms = wait.until(EC.presence_of_element_located((By.ID, "AcceptTerms")))
     dismiss_cookie_banner(driver)
@@ -280,7 +286,8 @@ def submit_purchase(
 
     click_purchase_proceed(driver, wait)
     payment_review_screenshot = save_page_result(driver, output_dir, "payment-review-result")
-    open_png_with_system_viewer(payment_review_screenshot)
+    if show_intermediate:
+        open_png_with_system_viewer(payment_review_screenshot)
 
     click_purchase_proceed(driver, wait)
     wait.until(
@@ -332,6 +339,15 @@ def parse_args() -> argparse.Namespace:
         choices=(1, 2),
         default=1,
         help="Number of member General Admission tickets to reserve. Must be 1 or 2.",
+    )
+    parser.add_argument(
+        "-a",
+        "--auto",
+        action="store_true",
+        help=(
+            "Skip confirmation prompts, submit the order automatically, and only "
+            "open the final confirmation screenshot."
+        ),
     )
     parser.add_argument(
         "--keys",
@@ -387,6 +403,7 @@ def main() -> int:
                 wait,
                 args.output_dir,
                 args.num_tickets,
+                args.auto,
             )
         if args.keep_open and not args.headless:
             input("\nPress Enter to close Firefox...")
