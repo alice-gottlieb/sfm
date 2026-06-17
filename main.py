@@ -1,7 +1,10 @@
 import argparse
 from datetime import date, datetime
 import json
+import os
+import platform
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -121,16 +124,16 @@ def save_page_result(
     return screenshot_path
 
 
-def open_png_in_new_window(
-    driver: webdriver.Firefox,
-    output_dir: Path,
-    png_path: Path,
-) -> None:
-    driver.switch_to.new_window("window")
-    driver.get(png_path.resolve().as_uri())
-    driver.save_screenshot(str(output_dir / "shown-png-window.png"))
-    print(f"\nOpened PNG in new browser window: {png_path}")
-    print(f"Window verification screenshot: {output_dir / 'shown-png-window.png'}")
+def open_png_with_system_viewer(png_path: Path) -> None:
+    resolved_path = png_path.resolve()
+    system_name = platform.system()
+    if system_name == "Darwin":
+        subprocess.run(["open", str(resolved_path)], check=True)
+    elif system_name == "Windows":
+        os.startfile(resolved_path)  # type: ignore[attr-defined]
+    else:
+        subprocess.run(["xdg-open", str(resolved_path)], check=True)
+    print(f"\nOpened PNG with system image viewer: {resolved_path}")
 
 
 def log_in(
@@ -249,7 +252,7 @@ def select_general_admission_tickets(
     wait.until(lambda active_driver: active_driver.current_url != starting_url)
     wait_for_rendered_body(wait)
     screenshot_path = save_page_result(driver, output_dir, "ticket-submit-result")
-    open_png_in_new_window(driver, output_dir, screenshot_path)
+    open_png_with_system_viewer(screenshot_path)
 
 
 def parse_args() -> argparse.Namespace:
