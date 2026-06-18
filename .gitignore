@@ -5,3 +5,6 @@ moma-site-info/**
 .vscode/**
 __pycache__/
 sfm.egg-info/
+.pytest_cache/
+build/
+dist/

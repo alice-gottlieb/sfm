@@ -1,17 +1,42 @@
 # sfm
 
-Easy CLI for getting SFMOMA member tickets.
+`sfm` is a beta CLI that automates SFMOMA member General Admission ticket
+reservations with Firefox and Selenium.
+
+This project is independent software and is not affiliated with, endorsed by,
+or sponsored by the San Francisco Museum of Modern Art.
 
 ## Requirements
 
-- Python 3.11+
-- Firefox installed
-- `uv` installed
-- SFMOMA account credentials in `KEYS.txt`
+- Python 3.11 or 3.12
+- Firefox
+- [`uv`](https://docs.astral.sh/uv/)
+- An SFMOMA member account
 
-## Setup
+## Install
 
-Create `KEYS.txt` in the project root:
+Install the GitHub beta:
+
+```bash
+uv tool install "git+https://github.com/alice-gottlieb/sfm.git@v0.1.0-beta.1"
+```
+
+For development from a local clone:
+
+```bash
+uv sync --locked
+uv tool install --editable .
+```
+
+Verify the command:
+
+```bash
+sfm --help
+```
+
+## Credentials
+
+Credentials must be JSON:
 
 ```json
 {
@@ -20,53 +45,75 @@ Create `KEYS.txt` in the project root:
 }
 ```
 
-Install dependencies and the `sfm` command:
+`sfm` checks these locations in order:
 
-```bash
-uv sync
-uv tool install --editable .
-```
+1. `--keys /path/to/credentials.json`
+2. The `SFM_KEYS_PATH` environment variable
+3. `KEYS.txt` in the current directory
+4. `~/.config/sfm/KEYS.json`
 
-After installation, verify the command is available:
-
-```bash
-sfm --help
-```
+Credential files should only be readable by your user account and must never
+be committed to git.
 
 ## Usage
 
-Get one General Admission member ticket for a date:
+Reserve one General Admission member ticket:
 
 ```bash
 sfm 2026-06-18
 ```
 
-Run with Firefox hidden:
+Run Firefox headlessly:
 
 ```bash
 sfm 2026-06-18 --headless
 ```
 
-Choose one or two member tickets:
+Select one or two member tickets:
 
 ```bash
 sfm 2026-06-18 -n 2
 ```
 
-By default, the CLI pauses on the purchase page, opens a screenshot in the system image viewer, and asks before submitting the order.
+Without a date, `sfm` uses today. Normal mode opens a purchase-page screenshot
+and asks for confirmation before completing checkout.
 
-Skip prompts and only show the final confirmation screenshot after tickets are acquired:
+### Experimental Auto Mode
 
 ```bash
 sfm 2026-06-18 -n 1 --auto
 ```
 
-If no date is provided, `sfm` defaults to today.
+`--auto` / `-a` skips all confirmation prompts and attempts to acquire the
+tickets immediately. It only opens the final confirmation screenshot.
 
-## Special Exhibitions
+**Auto mode is experimental and has not been verified through a live final
+ticket acquisition. Use it at your own risk.**
 
-The `--special` / `-s` path is still under development and is not yet functional end to end. Use the default General Admission path for now.
+### Special Exhibitions
 
-## Generated Files
+Special exhibition ticketing is under development. `--special` / `-s` exits
+immediately with an error in this beta and does not start Firefox.
 
-Screenshots and saved HTML are written to `moma-site-info/` for debugging. Credentials, screenshots, virtual environments, and generated metadata are ignored by git.
+## Sensitive Artifacts
+
+Screenshots and saved HTML can contain your name, email, address, and ticket
+details. By default they are stored in a private user data directory:
+
+- macOS: `~/Library/Application Support/sfm/artifacts`
+- Linux: `${XDG_DATA_HOME:-~/.local/share}/sfm/artifacts`
+- Windows: `%LOCALAPPDATA%\sfm\artifacts`
+
+Override this with `--output-dir`. Checkout failures save a
+`checkout-failure` diagnostic and never retry the purchase automatically.
+
+## Development
+
+```bash
+uv sync --locked
+uv run pytest
+uv build
+```
+
+Live Selenium tests require account credentials and are intentionally not run
+in CI.
