@@ -15,7 +15,9 @@ First GitHub beta.
 
 ### Known Limitations
 
-- Special exhibition ticketing is not available in this beta.
+- Special exhibition mode can select a requested entry time or list available
+  times and prompt for one, then follows the General Admission quantity,
+  confirmation, and checkout flow, including `--auto`.
 - `--auto` is experimental and has not been verified through a live final
   ticket acquisition.
 - Live browser behavior depends on the current SFMOMA website and may break

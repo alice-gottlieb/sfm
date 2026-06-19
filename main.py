@@ -26,10 +26,6 @@ DEFAULT_SPECIAL_ADMISSION = "Matisse: A Modern Scandal + General Admission"
 MACOS_FIREFOX_BINARY = Path(
     "/Applications/Firefox.app/Contents/MacOS/firefox"
 )
-SPECIAL_UNAVAILABLE_MESSAGE = (
-    "Special exhibition ticketing is under development and is not available "
-    "in this beta."
-)
 
 
 def default_config_path(home: Path | None = None) -> Path:
@@ -292,6 +288,19 @@ def xpath_string_literal(text: str) -> str:
     return 'concat(' + ', \'"\', '.join(f'"{part}"' for part in parts) + ')'
 
 
+def normalize_ticket_time(raw_time: str) -> str:
+    normalized = re.sub(r"\s+", " ", raw_time.strip().lower())
+    normalized = normalized.replace(".", "")
+    try:
+        parsed_time = datetime.strptime(normalized, "%I:%M %p")
+    except ValueError:
+        raise RuntimeError(
+            "Time must use 12-hour format, for example '12:00 pm'."
+        ) from None
+    meridiem = "a.m." if parsed_time.strftime("%p") == "AM" else "p.m."
+    return f"{parsed_time.strftime('%I').lstrip('0')}:{parsed_time:%M} {meridiem}"
+
+
 def select_admission(
     driver: webdriver.Firefox,
     wait: WebDriverWait,
@@ -322,16 +331,99 @@ def select_admission(
     wait.until(lambda active_driver: active_driver.current_url != starting_url)
     wait_for_rendered_body(wait)
 
+    if is_special:
+        try:
+            wait.until(
+                EC.presence_of_all_elements_located(
+                    (By.CSS_SELECTOR, "a.time-slot-link")
+                )
+            )
+        except TimeoutException as exc:
+            raise RuntimeError(
+                f"No entry times were found for special exhibition: {admission_name}"
+            ) from exc
+
     result_name = "admission-special-result" if is_special else "admission-general-result"
     save_page_result(driver, output_dir, result_name)
 
 
-def select_general_admission_tickets(
+def select_special_exhibition_time(
     driver: webdriver.Firefox,
     wait: WebDriverWait,
     output_dir: Path,
+    raw_time: str,
+) -> None:
+    ticket_time = normalize_ticket_time(raw_time)
+    time_xpath = (
+        "//div[contains(concat(' ', normalize-space(@class), ' '), "
+        "' time-slot--row ')]"
+        "//a[contains(concat(' ', normalize-space(@class), ' '), "
+        f"' time-slot-link ') and normalize-space(.) = {xpath_string_literal(ticket_time)}]"
+    )
+    try:
+        time_link = wait.until(EC.element_to_be_clickable((By.XPATH, time_xpath)))
+    except TimeoutException as exc:
+        raise RuntimeError(
+            f"Special exhibition entry time was not found or unavailable: {raw_time}"
+        ) from exc
+
+    print(f"\nClicking special exhibition entry time: {ticket_time}")
+    starting_url = driver.current_url
+    dismiss_cookie_banner(driver)
+    time_link.click()
+    try:
+        wait.until(lambda active_driver: active_driver.current_url != starting_url)
+    except TimeoutException as exc:
+        raise RuntimeError(
+            f"The page did not advance after selecting entry time: {raw_time}"
+        ) from exc
+    wait_for_rendered_body(wait)
+    save_page_result(driver, output_dir, "special-time-result")
+
+
+def prompt_for_special_exhibition_time(driver: webdriver.Firefox) -> str:
+    time_links = driver.find_elements(By.CSS_SELECTOR, "a.time-slot-link")
+    available_times = []
+    for time_link in time_links:
+        try:
+            ticket_time = normalize_ticket_time(time_link.text)
+        except RuntimeError:
+            continue
+        if ticket_time not in available_times:
+            available_times.append(ticket_time)
+
+    if not available_times:
+        raise RuntimeError("No special exhibition entry times are available.")
+
+    print("\nAvailable special exhibition entry times:")
+    for ticket_time in available_times:
+        print(f"  - {ticket_time.replace('.', '')}")
+
+    while True:
+        try:
+            raw_time = input("\nEnter an entry time: ").strip()
+        except EOFError:
+            raise RuntimeError(
+                "No entry time was provided. Use --time for non-interactive runs."
+            ) from None
+
+        try:
+            ticket_time = normalize_ticket_time(raw_time)
+        except RuntimeError as exc:
+            print(f"Invalid time: {exc}")
+            continue
+        if ticket_time in available_times:
+            return raw_time
+        print(
+            f"Time is not available: {raw_time}. "
+            "Choose one of the times listed above."
+        )
+
+
+def select_member_ticket_quantity(
+    driver: webdriver.Firefox,
+    wait: WebDriverWait,
     ticket_count: int,
-    auto: bool,
 ) -> None:
     page_text = summarize_page(driver).lower()
     if (
@@ -360,6 +452,16 @@ def select_general_admission_tickets(
         ) from exc
     print(f"\nSelecting {ticket_count} member ticket(s).")
     Select(member_select).select_by_value(str(ticket_count))
+
+
+def select_general_admission_tickets(
+    driver: webdriver.Firefox,
+    wait: WebDriverWait,
+    output_dir: Path,
+    ticket_count: int,
+    auto: bool,
+) -> None:
+    select_member_ticket_quantity(driver, wait, ticket_count)
 
     submit_button = wait.until(EC.element_to_be_clickable((By.ID, "submit-button")))
     starting_url = driver.current_url
@@ -507,7 +609,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         const=DEFAULT_SPECIAL_ADMISSION,
         default=None,
         metavar="EXHIBITION",
-        help="Unavailable in this beta; exits before starting Firefox.",
+        help=(
+            "Open entry times for a special exhibition. With no EXHIBITION, "
+            f"defaults to {DEFAULT_SPECIAL_ADMISSION!r}."
+        ),
     )
     parser.add_argument(
         "-n",
@@ -516,6 +621,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         choices=(1, 2),
         default=1,
         help="Number of member General Admission tickets to reserve. Must be 1 or 2.",
+    )
+    parser.add_argument(
+        "-t",
+        "--time",
+        default=None,
+        metavar="TIME",
+        help=(
+            "Special exhibition entry time in 12-hour format, such as "
+            "'12:00 pm'. Requires --special."
+        ),
     )
     parser.add_argument(
         "-a",
@@ -563,8 +678,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def run(args: argparse.Namespace) -> int:
     driver = None
     try:
-        if args.special is not None:
-            raise RuntimeError(SPECIAL_UNAVAILABLE_MESSAGE)
+        if args.time is not None and args.special is None:
+            raise RuntimeError("--time requires --special.")
 
         keys_path = resolve_credentials_path(args.keys)
         output_dir = (
@@ -583,13 +698,23 @@ def run(args: argparse.Namespace) -> int:
         driver = build_driver(args.headless)
         wait = log_in(driver, email, password, output_dir, args.timeout)
         open_performance_page(driver, wait, output_dir, ticket_date)
+        admission_name = args.special or DEFAULT_ADMISSION
+        is_special = args.special is not None
         select_admission(
             driver,
             wait,
             output_dir,
-            DEFAULT_ADMISSION,
-            is_special=False,
+            admission_name,
+            is_special=is_special,
         )
+        if is_special:
+            selected_time = args.time or prompt_for_special_exhibition_time(driver)
+            select_special_exhibition_time(
+                driver,
+                wait,
+                output_dir,
+                selected_time,
+            )
         select_general_admission_tickets(
             driver,
             wait,

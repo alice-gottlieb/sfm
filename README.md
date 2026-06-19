@@ -1,7 +1,8 @@
 # sfm
 
 `sfm` is a beta CLI that automates SFMOMA member General Admission ticket
-reservations with Firefox and Selenium.
+reservations and opens available special-exhibition entry times with Firefox
+and Selenium.
 
 This project is independent software and is not affiliated with, endorsed by,
 or sponsored by the San Francisco Museum of Modern Art.
@@ -92,8 +93,30 @@ ticket acquisition. Use it at your own risk.**
 
 ### Special Exhibitions
 
-Special exhibition ticketing is under development. `--special` / `-s` exits
-immediately with an error in this beta and does not start Firefox.
+Open the available entry times for the default special exhibition:
+
+```bash
+sfm 2026-06-18 --special
+```
+
+Select a different special exhibition by its exact button text:
+
+```bash
+sfm 2026-06-18 -s "Exhibition Name + General Admission"
+```
+
+Select an available entry time using 12-hour format:
+
+```bash
+sfm 2026-06-18 --special --time "12:00 pm"
+```
+
+`--time` / `-t` requires `--special` / `-s`. Without `--time`, the CLI lists
+all available entry times and prompts you to enter one. After choosing the
+time, the CLI follows the same flow as General Admission: it selects the member
+quantity specified by `--num-tickets` / `-n`, clicks Continue, displays the
+order screenshot, and asks for confirmation before completing checkout.
+`--auto` skips the confirmation prompts and intermediate images in both modes.
 
 ## Sensitive Artifacts
 
