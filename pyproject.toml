@@ -1,0 +1,43 @@
+[project]
+name = "sfm"
+version = "0.1.0b1"
+description = "Automate SFMOMA member General Admission ticket reservations."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "Alice Gottlieb" },
+]
+license = "MIT"
+license-files = ["LICENSE"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "selenium>=4.33.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/alice-gottlieb/sfm"
+Repository = "https://github.com/alice-gottlieb/sfm"
+Issues = "https://github.com/alice-gottlieb/sfm/issues"
+
+[project.scripts]
+sfm = "main:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+]
+
+[tool.uv]
+package = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
